@@ -126,11 +126,11 @@ rdf.RDFService = new function () {
  * sub             pre                  arcsOut
  * sub             obj                  arcsOut and then getObject(s)
  * sub pre         obj                  getObject or getObjects
- *         obj     pre                  arcsIn TODO!
+ *         obj     pre                  arcsIn
  *         obj     sub                  arcsIn and then getSubject(s)
  *     pre obj     sub                  getSubject or getSubjects
  * sub pre         existence of obj     hasObject
- * pre obj         existence of sub     hasSubject TODO!
+ * pre obj         existence of sub     hasSubject
  * sub pre obj     existence            hasAssertion
  */
 
