@@ -123,9 +123,9 @@ rdf.RDFService = new function () {
  * YOU HAVE        YOU WANT             YOU NEED
  *
  * sub pre obj
- * sub			   pre                  arcsOut
- * sub			   obj                  arcsOut and then getObject(s)
- * sub pre		   obj                  getObject or getObjects
+ * sub             pre                  arcsOut
+ * sub             obj                  arcsOut and then getObject(s)
+ * sub pre         obj                  getObject or getObjects
  *         obj     pre                  arcsIn TODO!
  *         obj     sub                  arcsIn and then getSubject(s)
  *     pre obj     sub                  getSubject or getSubjects
