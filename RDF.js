@@ -16,7 +16,8 @@ window.rdf = {
     RDFTriple           : null, // an assertion
     RDFService          : null, // creating nodes
     RDFDatasource       : null, // querying nodes
-    RDFManager          : null  // indexing nodes
+    RDFManager          : null, // indexing nodes
+    RDFObserver         : null  // watching nodes
 };
 
 
@@ -126,6 +127,7 @@ rdf.RDFTriple.prototype = {
     }
 };
 
+
 // RDFService ..................................................................
 
 /**
@@ -135,7 +137,7 @@ rdf.RDFTriple.prototype = {
  */
 rdf.RDFService = new function () {
     
-	var identities = 1;
+    var identities = 1;
     var resources = {};
     var literals = {};
     
@@ -153,15 +155,15 @@ rdf.RDFService = new function () {
      * @returns {RDFResource}
      */
     this.getResource = function ( uri ) {
-    	
-    	if ( !uri || uri === "" ) {
-    		uri = this.generateID ();
-    	}
-    	if ( !resources [ uri ]) {
-    		if ( uri.indexOf ( "_n" ) === 0 ) {
-    			resource = new rdf.RDFBlankNode ( uri );
+        
+        if ( !uri || uri === "" ) {
+            uri = this.generateID ();
+        }
+        if ( !resources [ uri ]) {
+            if ( uri.indexOf ( "_n" ) === 0 ) {
+                resource = new rdf.RDFBlankNode ( uri );
             } else {
-            	resource = new rdf.RDFResource ( uri );
+                resource = new rdf.RDFResource ( uri );
             }
             resources [ uri ] = resource;
         }
@@ -186,8 +188,8 @@ rdf.RDFService = new function () {
      * @returns {String}
      */
     this.generateID = function () {
-    	
-    	return "_n" + identities ++;
+        
+        return "_n" + identities ++;
     };
 };
 
@@ -217,9 +219,34 @@ rdf.RDFDatasource = function () {
 rdf.RDFDatasource.prototype = {
         
     /**
+     * Local triple manager.
      * @type {RDFManager}
      */
     _triples : null,
+    
+    /**
+     * List of datasource observers.
+     * @type {Array<RDFObserver>}
+     */
+    _observers : [],
+    
+    /**
+     * Tracking assertions while batch updating.
+     * @type {RDFDatasource}
+     */
+    _adata : null,
+    
+    /**
+     * Tracking unassertions while batch updating.
+     * @type {RDFDatasource}
+     */
+    _udata : null,
+    
+    /**
+     * True while performing a batch update.
+     * @type {boolean}
+     */
+    _isBatch : false,
     
     /**
      * @return {String}
@@ -250,6 +277,45 @@ rdf.RDFDatasource.prototype = {
         if ( !this._triples.getObject ( sub, pre, obj )) {
             this._triples.addObject ( sub, pre, obj, object  );
         }
+        
+        this._observers.forEach ( function ( observer ) {
+            observer.onAssert ( this, subject, predicate, object );
+        }, this );
+        
+        if ( this._adata !== null ) {
+            this._adata.assert ( subject, predicate, object );
+        }
+    },
+    
+    /**
+     * Unassert datasource triple.
+     * @param {RDFResource} subject
+     * @param {RDFResource} predicate
+     * @param {RDFNode} object
+     */
+    unassert : function ( subject, predicate, object ) {
+        
+        var sub = subject.value;
+        var pre = predicate.value;
+        var obj = object.value;
+        
+        if ( this._triples.getObject ( sub, pre, obj )) {
+            this._triples.remove ( sub, pre, obj );
+            if ( this.arcsOut ( predicate ).length === 0 ) {
+                this._triples.remove ( sub, pre );
+                if ( this.arcsOut ( subject ).length === 0 ) {
+                    this._triples.remove ( sub );
+                }
+            }
+        }
+        
+        this._observers.forEach ( function ( observer ) {
+            observer.onUnassert ( this, subject, predicate, object );
+        }, this );
+        
+        if ( this._udata !== null ) {
+            this._udata.assert ( subject, predicate, object );
+        }
     },
     
     /**
@@ -269,7 +335,7 @@ rdf.RDFDatasource.prototype = {
     },
         
     /**
-     * Get all instances of RDFResource.
+     * Get all instances of RDFResource (excluding RDFLiterals). 
      * @returns {Array<RDFResource>}
      */ 
     getResources : function () {
@@ -301,7 +367,6 @@ rdf.RDFDatasource.prototype = {
     
     /**
      * Get first object found.
-     * TODO: Performance this.
      * @param {RDFResource} subject
      * @param {RDFResource} predicate
      * @returns {RDFNode}
@@ -479,6 +544,98 @@ rdf.RDFDatasource.prototype = {
     },
     
     /**
+     * Add datasource observer.
+     * @param {RDFObserver} observer
+     */
+    addObserver : function ( observer ) {
+
+        for ( var method in rdf.RDFObserver.prototype ) {
+            if ( observer [ method ] === undefined ) {
+                throw new TypeError ();
+            }
+        }
+        this._observers.push ( observer );
+    },
+    
+    /**
+     * Remove datasource observer.
+     * @param {RDFObserver} observer
+     */
+    removeObserver : function ( observer ) {
+        
+        var i = this._observers.indexOf ( observer );
+        
+        if ( i !== -1 ) {
+            var rest = this._observers.slice ( i + 1 );
+            this._observers.length = i;
+            this._observers.push ( rest ); 
+        }
+    },
+    
+    /**
+     * Notify observers that the datasource is about to send multiple notifications. 
+     * Observer methods onChange and onMove depend on this being invoked prior to 
+     * datasource updates. Calling this should be followed by a call to batchEnd.
+     */
+    batchBegin : function () {
+        
+        this._isBatch = true;
+        if ( this._observers.length > 0 ) {
+            this._adata = new rdf.RDFDatasource ();
+            this._udata = new rdf.RDFDatasource ();
+            this._observers.forEach ( function ( observer ) {
+                observer.onBatchBegin ( this );
+            }, this );
+        }
+    },
+    
+    /**
+     * Notify observers that the datasource has completed multiple notifications.
+     */
+    batchEnd : function () {
+        
+        this._isBatch = false;
+        if ( this._observers.length > 0 ) {
+            this._observers.forEach ( function ( observer ) {
+                observer.onBatchEnd ( this );
+            }, this );
+            if ( this._adata !== null ) {
+                this._resolveBatch ();
+                this._adata = null;
+                this._udata = null;
+            }
+        }
+    },
+    
+    /**
+     * Notify observers that a subject was moved or an object was changed.
+     */
+    _resolveBatch : function () {
+        
+        this._udata.getTriples ().forEach ( function ( triple ) {
+            
+            var sub = triple.subject,
+                pre = triple.predicate,
+                obj = triple.object,
+                nes = this._adata.getSubject ( pre, obj ),
+                neo = this._adata.getObject ( sub, pre );
+            
+            if ( nes ) {
+                this._observers.forEach ( function ( observer ) {
+                    observer.onMove ( this, sub, nes, pre, obj );
+                }, this );
+            }
+            if ( neo ) {
+                this._observers.forEach ( function ( observer ) {
+                    observer.onChange ( this, sub, pre, obj, neo );
+                }, this );
+            }
+        }, this );
+        
+        
+    },
+    
+    /**
      * Get assertions as instances of RDFTriple.
      * @returns {Array<RDFTriple>}
      */
@@ -532,7 +689,7 @@ rdf.RDFDatasource.prototype = {
 
 /**
  * Not to be invoked by users; consider this a private member of your RDFDatasource.
- * TODO: Potential ambiguity problem; perhaps we should introduce new level of maps? 
+ * TODO: Potential ambiguity problem; perhaps to be solved by another level of maps?
  */
 rdf.RDFManager = function () {};
 
@@ -665,5 +822,91 @@ rdf.RDFManager.prototype = {
             result = this._map [ sub ][ pre ];
         }
         return result;
+    },
+    
+    /**
+     * Remove map entries.
+     * TODO: Should we move sanitation of empty map structures from RDFDatasource#unassert to here?  
+     * @param {String} sub
+     * @param @optional {String} pre
+     * @param @optional {String} obj
+     */
+    remove : function ( sub, pre, obj ) {
+        
+        if ( sub && pre && obj ) {
+            delete this._map [ sub ][ pre ][ obj ];
+        } else if ( sub && pre ) {
+            delete this._map [ sub ][ pre ];
+        } else if ( sub ) {
+            delete this._map [ sub ];
+        }
     }
+};
+
+
+// RDFObserver .................................................................
+
+/**
+ * Interface for an object that can be associated to a datasource 
+ * in order to intercept low level changes to the data structure. 
+ * @see {RDFDatasource#addObserver}
+ */
+rdf.RDFObserver = function () {};
+rdf.RDFObserver.prototype = {
+    
+    /**
+     * Called when a new assertion is made in a datasource.
+     * @param {RDFDatasource} datasource
+     * @param {RDFResource} subject
+     * @param {RDFResource} predicate
+     * @param {RDFNode} object
+     */
+    onAssert : function ( datasource, subject, predicate, object ) {},
+    
+    /**
+     * Called when an assertion is deleted from a datasource.
+     * @param {RDFDatasource} datasource
+     * @param {RDFResource} subject
+     * @param {RDFResource} predicate
+     * @param {RDFNode} object
+     */
+    onUnassert : function ( datasource, subject, predicate, object ) {},
+    
+    /**
+     * Called when the object of an assertion changes value. This implies 
+     * that the old assertion was deleted and a new assertion was created. 
+     * This method will only be called if the datasource updater invoked 
+     * method batchBegin on the datasource before performing the updates.
+     * @param {RDFDatasource} datasource
+     * @param {RDFResource} subject
+     * @param {RDFResource} predicate
+     * @param {RDFNode} oldobject
+     * @param {RDFNode} newobject
+     */
+    onChange : function ( datasource, subject, predicate, oldobject, newobject ) {},
+    
+    /**
+     * Called when the subject of an assertion changes value. Note that 
+     * This method will only be called if the datasource updater invoked 
+     * method batchBegin on the datasource before performing all updates.
+     * @param {RDFDatasource} datasource
+     * @param {RDFResource} oldsubject
+     * @param {RDFResource} newsubject
+     * @param {RDFResource} predicate
+     * @param {RDFNode} object
+     */
+    onMove : function ( datasource, oldsubject, newsubject, predicate, object ) {},
+    
+    /**
+     * Called when a datasource is about to send multiple notifications;
+     * Observer may disable intensive processing to optimize performance.
+     * @param {RDFDatasource} datasource
+     */
+    onBatchBegin : function ( datasource ) {},
+    
+    /**
+     * Called when a datasource has completed multiple notifications.
+     * @param {RDFDatasource} datasource
+     */
+    onBatchEnd : function ( datasource ) {}
 };
