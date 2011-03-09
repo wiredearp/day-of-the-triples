@@ -212,8 +212,9 @@ rdf.RDFService = new function () {
  */
 
 rdf.RDFDatasource = function () {
-
+    
     this._triples = new rdf.RDFManager ();
+    this._temp = Math.random ();
 };
     
 rdf.RDFDatasource.prototype = {
@@ -579,13 +580,15 @@ rdf.RDFDatasource.prototype = {
      */
     batchBegin : function () {
         
-        this._isBatch = true;
-        if ( this._observers.length > 0 ) {
-            this._adata = new rdf.RDFDatasource ();
-            this._udata = new rdf.RDFDatasource ();
-            this._observers.forEach ( function ( observer ) {
-                observer.onBatchBegin ( this );
-            }, this );
+        if ( !this._isBatch ) {
+            this._isBatch = true;
+            if ( this._observers.length > 0 ) {
+                this._adata = new rdf.RDFDatasource ();
+                this._udata = new rdf.RDFDatasource ();
+                this._observers.forEach ( function ( observer ) {
+                    observer.onBatchBegin ( this );
+                }, this );
+            }
         }
     },
     
@@ -594,15 +597,17 @@ rdf.RDFDatasource.prototype = {
      */
     batchEnd : function () {
         
-        this._isBatch = false;
-        if ( this._observers.length > 0 ) {
-            this._observers.forEach ( function ( observer ) {
-                observer.onBatchEnd ( this );
-            }, this );
-            if ( this._adata !== null ) {
-                this._resolveBatch ();
-                this._adata = null;
-                this._udata = null;
+        if ( this._isBatch ) {
+            this._isBatch = false;
+            if ( this._observers.length > 0 ) {
+                this._observers.forEach ( function ( observer ) {
+                    observer.onBatchEnd ( this );
+                }, this );
+                if ( this._adata !== null ) {
+                    this._resolveBatch ();
+                    this._adata = null;
+                    this._udata = null;
+                }
             }
         }
     },
@@ -684,6 +689,48 @@ rdf.RDFDatasource.prototype = {
     }
 };
 
+/**
+ * [static] Update datasource using another datasource as input. 
+ * When finished, target datasource will be identical to source;
+ * triples not represented in source will be deleted.   
+ * @param {RDFDatasource} source
+ * @param {RDFDatasource} target
+ * @returns {boolean} True if target data was changed
+ */
+rdf.RDFDatasource.updateFrom = function ( source, target ) {
+    
+    var result = false;
+    
+    var adata = [];
+    source.getTriples ().forEach ( function ( t ) {
+        if ( !target.hasAssertion ( t.subject, t.predicate, t.object )) {
+            adata.push ( t );
+        }
+    });
+    
+    var udata = [];
+    target.getTriples ().forEach ( function ( t ) {
+        if ( !source.hasAssertion ( t.subject, t.predicate, t.object )) {
+            udata.push ( t );
+        }
+    });
+    
+    if ( adata.length > 0 || udata.length > 0 ) {
+        
+        target.batchBegin ();
+        adata.forEach ( function ( t ) {
+            target.assert ( t.subject, t.predicate, t.object );
+        });
+        udata.forEach ( function ( t ) {
+            target.unassert ( t.subject, t.predicate, t.object );
+        });
+        target.batchEnd ();
+        result = true;
+    }
+    
+    return result;
+};
+
 
 // RDFManager .............................................................
 
@@ -691,7 +738,10 @@ rdf.RDFDatasource.prototype = {
  * Not to be invoked by users; consider this a private member of your RDFDatasource.
  * TODO: Potential ambiguity problem; perhaps to be solved by another level of maps?
  */
-rdf.RDFManager = function () {};
+rdf.RDFManager = function () {
+    
+    this._map = {};
+};
 
 rdf.RDFManager.prototype = {
    
@@ -704,7 +754,7 @@ rdf.RDFManager.prototype = {
      * content is used to describe the RDF model itself, this should work out.
      * @type {Map<String,<String,<String,RDFNode>>>}
      */
-    _map : {},
+    _map : null,
     
     /**
      * @return {String}
@@ -853,6 +903,11 @@ rdf.RDFManager.prototype = {
  */
 rdf.RDFObserver = function () {};
 rdf.RDFObserver.prototype = {
+        
+    /**
+     * @returns {String}
+     */
+    toString : function () { return "[object RDFObserver]"; },
     
     /**
      * Called when a new assertion is made in a datasource.

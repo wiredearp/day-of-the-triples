@@ -60,7 +60,7 @@ rdf.RDFaContext.prototype = {
 };
 
 
-//RDFaTriple ................................................................
+// RDFaTriple ................................................................
 
 /**
  * Carries an [incomplete triple] while searching for subjects.
@@ -115,6 +115,15 @@ rdf.RDFattributes.index = function ( element ) {
             atts [ prop ] = att.nodeValue;
         }
     }
+    if ( atts.rel && atts.rel === "stylesheet" ) {
+        atts.rel = null; // how to react on this?
+    }
+    
+    /*
+     * TODO: Support CURIE and relative URI in @about
+     * according to section 5.4. CURIE and URI Processing
+     */
+    
     return atts;
 };
 
@@ -194,8 +203,8 @@ rdf.RDFaCrawler.prototype = {
         
         // 1: Init current iteration.
         
-        var cont = true,            // [recurse] 
-            skip = false,             // [skip_element]
+        var cont = true,             // [recurse] 
+            skip = false,            // [skip_element]
             suri = null,             // [new subject]
             ouri = null,             // [current object resource]
             uris = context.uris,     // [local list of URI mappings]
@@ -338,7 +347,7 @@ rdf.RDFaCrawler.prototype = {
                     if ( val ) {
                         atts.property.split ( " " ).forEach ( function ( prop ) {
                             prop = this._qualify ( prop, uris );
-                            this._literal ( suri, prop, val );
+                            this._literal ( suri, prop, val.trim ());
                         }, this );
                     }
                 } else {
@@ -369,7 +378,7 @@ rdf.RDFaCrawler.prototype = {
          */
         if ( skip ) {
             context.lang = lang;
-            context.list = list;
+            context.uris = uris;
         } else {
             context = new rdf.RDFaContext ( 
                 context.base,                                   // [base]
