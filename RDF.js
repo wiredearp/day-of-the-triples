@@ -214,7 +214,7 @@ rdf.RDFService = new function () {
 rdf.RDFDatasource = function () {
     
     this._triples = new rdf.RDFManager ();
-    this._temp = Math.random ();
+    this._observers = [];
 };
     
 rdf.RDFDatasource.prototype = {
@@ -229,7 +229,7 @@ rdf.RDFDatasource.prototype = {
      * List of datasource observers.
      * @type {Array<RDFObserver>}
      */
-    _observers : [],
+    _observers : null,
     
     /**
      * Tracking assertions while batch updating.
@@ -264,7 +264,7 @@ rdf.RDFDatasource.prototype = {
      * @param {RDFNode} object
      */
     assert : function ( subject, predicate, object ) {
-    
+        
         var sub = subject.value;
         var pre = predicate.value;
         var obj = object.value;

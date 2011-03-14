@@ -118,12 +118,6 @@ rdf.RDFattributes.index = function ( element ) {
     if ( atts.rel && atts.rel === "stylesheet" ) {
         atts.rel = null; // how to react on this?
     }
-    
-    /*
-     * TODO: Support CURIE and relative URI in @about
-     * according to section 5.4. CURIE and URI Processing
-     */
-    
     return atts;
 };
 
@@ -377,8 +371,8 @@ rdf.RDFaCrawler.prototype = {
          * 11. Compute context for next level. 
          */
         if ( skip ) {
-            context.lang = lang;
-            context.uris = uris;
+            context.list = list;                                // [list of incomplete triples]
+            context.lang = lang;                                // [language]
         } else {
             context = new rdf.RDFaContext ( 
                 context.base,                                   // [base]
