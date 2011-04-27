@@ -5,15 +5,16 @@
  * think this stuff is worth it, you can buy me a beer in return. Wired Earp.
  */
 
+
 // RDFa ......................................................................
 
 /**
- * Populates an RDF datasource by analyzing RDFa annotated document. 
+ * Populates RDF datasource by analyzing RDFa annotated document. 
  */
 rdf.RDFa = new function () {
     
     /**
-     * Analyze RDFa, build RDF. 
+     * [static] Analyze RDFa, build RDF. 
      * @param {Document} doc
      * @param {RDFDatasource} ds
      */
@@ -24,6 +25,31 @@ rdf.RDFa = new function () {
         } else {
             throw "Please index a Document node";
         }
+    };
+};
+
+
+// RDFaAssitant ...............................................................
+
+/**
+ * Assistant methods.
+ */
+rdf.RDFaAssistant = new function () {
+    
+    // matches URL
+    var uri = /^(http|https)\:\/\/[a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,4}(\/?[a-zA-Z0-9]*)+#?[a-zA-Z0-9]*$/;
+    
+    // matches URN
+    var urn = /^urn:[a-zA-Z0-9]{1}[a-zA-Z0-9\-]{1,31}:[a-zA-Z0-9_,:=@;!'%\/#\(\)\+\-\.\$\*\?]+/;
+    
+    /**
+     * [static] Looks like a qualified URI?
+     * @param {String} term
+     * @returns {boolean}
+     */
+    this.looksURI = function ( term ) {
+        
+        return uri.test ( term ) || urn.test ( term ); 
     };
 };
 
@@ -51,12 +77,12 @@ rdf.RDFaContext = function ( base, suri, ouri, uris, list, lang ) {
 
 rdf.RDFaContext.prototype = {
     
-    base : null,     // [base]
-    suri : null,     // [parent subject]
-    ouri : null,     // [parent object resource]
-    uris : null,     // [list of URI mappings]
-    list : null,     // [list of incomplete triples]
-    lang : null     // [language]
+    base : null, // [base]
+    suri : null, // [parent subject]
+    ouri : null, // [parent object resource]
+    uris : null, // [list of URI mappings]
+    list : null, // [list of incomplete triples]
+    lang : null  // [language]
 };
 
 
@@ -111,12 +137,12 @@ rdf.RDFattributes.index = function ( element ) {
     var atts = new rdf.RDFattributes ();
     for ( var prop in rdf.RDFattributes.prototype ) {
         var att = element.attributes [ prop === "type" ? "typeof" : prop ];
-        if ( att !== undefined && att.specified ) {
+        if ( att && att.specified ) {
             atts [ prop ] = att.nodeValue;
         }
     }
     if ( atts.rel && atts.rel === "stylesheet" ) {
-        atts.rel = null; // how to react on this?
+        atts.rel = null; // TODO: how to react on this?
     }
     return atts;
 };
@@ -207,15 +233,30 @@ rdf.RDFaCrawler.prototype = {
         
         // 2: Scan for [URI mappings].
         
-        Array.forEach ( element.attributes, function ( att ) {
-            if ( att.specified ) {
+        if ( document.all ) { // xmlns attributes hidden for IE
+            var html = element.outerHTML;
+            if ( html.indexOf ( "xmlns:" ) >-1 ) {
+                html = html.split ( ">" )[ 0 ];
+                html = html.replace ( / = /g, "=" );
+                html.split ( " " ).forEach ( function ( cut ) {
+                    if ( cut.indexOf ( "xmlns:" ) >-1 ) {
+                        cut = cut.split ( "=" );
+                        var l = cut [ 0 ];
+                        var r = cut [ 1 ];
+                        var p = l.split ( ":" )[ 1 ];
+                        uris [ p ] = r.replace ( /\"/g, "" );
+                    }
+                });
+            }
+        } else {
+            Array.forEach ( element.attributes, function ( att ) {
                 var name = att.nodeName;
                 if ( name.indexOf ( "xmlns:" ) >-1 ) {
                     var prefix = name.split ( ":" )[ 1 ];
                     uris [ prefix ] = att.nodeValue;
                 }
-            }
-        }, this );
+            }, this );
+        }
         
         // 3: TODO: Scan for [current language] info.
         
@@ -329,11 +370,10 @@ rdf.RDFaCrawler.prototype = {
                 if ( !is && atts.datatype === "" ) {
                     is = element.hasChildNodes ();
                 }
-                
                 if ( is ) {
                     var val = atts.content ? atts.content : null;
                     if ( !val ) {
-                        val = element.textContent ? element.textContent : element.text;
+                        val = element.textContent ? element.textContent : ( element.text ? element.text : element.innerText );
                     }
                     if ( lang ) {
                         // TODO: include lang info as prescribed in http://www.w3.org/TR/rdf-concepts/
@@ -388,18 +428,21 @@ rdf.RDFaCrawler.prototype = {
     },
     
     /**
-     * Replace prefix with namespace.
+     * Replace prefix with namespace, if nescessary.
      * @param {String} att
      * @param {Map<String,String>} uris
      * @return {String}
      */
     _qualify : function ( att, uris ) {
        
-        var split = att.split ( ":" );
-        var fx = split [ 0 ];
-        var ns = uris [ fx ];
-        var id = split [ 1 ];
-        return ( ns ? ns : "http://www.undefined.org#" ) + ( id ? id : att );
+        if ( !rdf.RDFaAssistant.looksURI ( att )) {
+            var split = att.split ( ":" );
+            var fx = split [ 0 ];
+            var ns = uris [ fx ];
+            var id = split [ 1 ];
+            att = ( ns ? ns : "http://www.undefined.org#" ) + ( id ? id : att );
+        } 
+        return att;
     },
     
     /**

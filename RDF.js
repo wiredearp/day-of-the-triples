@@ -62,6 +62,7 @@ rdf.RDFLiteral.prototype.toString = function () {
  * created in the following way: RDFService.getResource ( RDFService.generateID ());
  */
 rdf.RDFBlankNode = function ( id ) { this.value = id; };
+rdf.RDFBlankNode.PREFIX = "_:node";
 rdf.RDFBlankNode.prototype = new rdf.RDFResource;
 rdf.RDFBlankNode.prototype.toString = function () {
     return "[object RDFBlankNode]";
@@ -160,7 +161,7 @@ rdf.RDFService = new function () {
             uri = this.generateID ();
         }
         if ( !resources [ uri ]) {
-            if ( uri.indexOf ( "_n" ) === 0 ) {
+            if ( uri.indexOf ( rdf.RDFBlankNode.PREFIX ) === 0 ) {
                 resource = new rdf.RDFBlankNode ( uri );
             } else {
                 resource = new rdf.RDFResource ( uri );
@@ -189,7 +190,7 @@ rdf.RDFService = new function () {
      */
     this.generateID = function () {
         
-        return "_n" + identities ++;
+        return rdf.RDFBlankNode.PREFIX + identities ++;
     };
 };
 
@@ -296,26 +297,29 @@ rdf.RDFDatasource.prototype = {
      */
     unassert : function ( subject, predicate, object ) {
         
-        var sub = subject.value;
-        var pre = predicate.value;
-        var obj = object.value;
+        if ( this.hasAssertion ( subject, predicate, object )) {
         
-        if ( this._triples.getObject ( sub, pre, obj )) {
-            this._triples.remove ( sub, pre, obj );
-            if ( this.arcsOut ( predicate ).length === 0 ) {
-                this._triples.remove ( sub, pre );
-                if ( this.arcsOut ( subject ).length === 0 ) {
-                    this._triples.remove ( sub );
+            var sub = subject.value;
+            var pre = predicate.value;
+            var obj = object.value;
+            
+            if ( this._triples.getObject ( sub, pre, obj )) {
+                this._triples.remove ( sub, pre, obj );
+                if ( this.arcsOut ( predicate ).length === 0 ) {
+                    this._triples.remove ( sub, pre );
+                    if ( this.arcsOut ( subject ).length === 0 ) {
+                        this._triples.remove ( sub );
+                    }
                 }
             }
-        }
-        
-        this._observers.forEach ( function ( observer ) {
-            observer.onUnassert ( this, subject, predicate, object );
-        }, this );
-        
-        if ( this._udata !== null ) {
-            this._udata.assert ( subject, predicate, object );
+            
+            this._observers.forEach ( function ( observer ) {
+                observer.onUnassert ( this, subject, predicate, object );
+            }, this );
+            
+            if ( this._udata !== null ) {
+                this._udata.assert ( subject, predicate, object );
+            }
         }
     },
     
@@ -659,6 +663,19 @@ rdf.RDFDatasource.prototype = {
             }
         }
         return this._randomize ( result );
+    },
+    
+    /**
+     * Clone datasource. This will not copy any RDFObservers attached.
+     * @returns {RDFDatasource}
+     */
+    clone : function () {
+        
+        var clone = new rdf.RDFDatasource ();
+        this.getTriples ().forEach ( function ( triple ) {
+            clone.assert ( triple.subject, triple.predicate, triple.object );
+        });
+        return clone;
     },
     
     /**
